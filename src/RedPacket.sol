@@ -112,6 +112,7 @@ contract RedPacket {
             userMap[userAddress].deposit =
                 userMap[userAddress].deposit +
                 number;
+                
         }
 
         return 8;
