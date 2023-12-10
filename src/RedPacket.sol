@@ -17,6 +17,7 @@ contract RedPacket {
         uint256 deposit;
         bool lock;
         bool active;
+        address pocket; // 正在参加的红包地址
     }
 
     // 红包信息
@@ -81,7 +82,7 @@ contract RedPacket {
 
     // 初始化个人信息
     function initUser(uint256 _deposit) public payable returns (uint256 count) {
-        userMap[msg.sender] = User(_deposit, false, true);
+        // userMap[msg.sender] = User(_deposit, false, true);
         return _deposit;
     }
 
