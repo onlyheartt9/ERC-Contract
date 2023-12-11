@@ -17,7 +17,7 @@ import "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
  * DO NOT USE THIS CODE IN PRODUCTION.
  */
 
-contract VRFv2Consumer is VRFConsumerBaseV2, ConfirmedOwner {
+abstract contract VRFv2Consumer is VRFConsumerBaseV2, ConfirmedOwner {
     event RequestSent(uint256 requestId, uint32 numWords);
     event RequestFulfilled(uint256 requestId, uint256[] randomWords);
 
@@ -63,21 +63,21 @@ contract VRFv2Consumer is VRFConsumerBaseV2, ConfirmedOwner {
      * COORDINATOR: 0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625
      */
     constructor(
-        uint64 subscriptionId
+        uint64 subscriptionId,
+        address _subscriptionAddr
     )
-        VRFConsumerBaseV2(0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625)
+        VRFConsumerBaseV2(_subscriptionAddr)
         ConfirmedOwner(msg.sender)
     {
         COORDINATOR = VRFCoordinatorV2Interface(
-            0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625
+            _subscriptionAddr
         );
         s_subscriptionId = subscriptionId;
     }
 
     // Assumes the subscription is funded sufficiently.
     function requestRandomWords()
-        external
-        onlyOwner
+        public
         returns (uint256 requestId)
     {
         // Will revert if subscription is not set and funded.
@@ -98,15 +98,15 @@ contract VRFv2Consumer is VRFConsumerBaseV2, ConfirmedOwner {
         emit RequestSent(requestId, numWords);
         return requestId;
     }
+    
 
-    function fulfillRandomWords(
+    function setRandomWords(
         uint256 _requestId,
         uint256[] memory _randomWords
-    ) internal override {
+    ) internal {
         require(s_requests[_requestId].exists, "request not found");
         s_requests[_requestId].fulfilled = true;
         s_requests[_requestId].randomWords = _randomWords;
-        emit RequestFulfilled(_requestId, _randomWords);
     }
 
     function getRequestStatus(
