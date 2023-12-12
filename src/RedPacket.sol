@@ -2,8 +2,9 @@
 pragma solidity ^0.8.7;
 import {VRFv2Consumer} from "./ChainLinkVRF.sol";
 import {Utils} from "./Utils.sol";
+import {Transfer} from "./Transfer.sol";
 
-contract RedPacket is VRFv2Consumer, Utils {
+contract RedPacket is VRFv2Consumer, Utils, Transfer {
     uint256 private globalCounter;
     uint256 private total;
     mapping(address => User) private userMap;
@@ -48,8 +49,12 @@ contract RedPacket is VRFv2Consumer, Utils {
 
     constructor(
         uint64 _subscriptionId,
-        address _subscriptionAddr
-    ) VRFv2Consumer(_subscriptionId, _subscriptionAddr) {}
+        address _subscriptionAddr,
+        address _tokenAddress
+    )
+        VRFv2Consumer(_subscriptionId, _subscriptionAddr)
+        Transfer(_tokenAddress)
+    {}
 
     // 获取发起人对应的红包
     function getPacket(uint256 _id) public view returns (Packet memory) {
@@ -65,7 +70,7 @@ contract RedPacket is VRFv2Consumer, Utils {
         uint256 _amount,
         string memory collectType,
         uint8 _limit
-    ) external payable returns (Packet memory packet) {
+    ) external  returns (Packet memory packet) {
         if (_limit != 5 || _limit != 10) {
             revert LIMIT_ERROR("createPacket");
         }
@@ -110,9 +115,15 @@ contract RedPacket is VRFv2Consumer, Utils {
     // 追加押金
     function addDeposit(
         uint256 _deposit
-    ) external payable returns (uint256 count) {
+    ) external  returns (uint256 deposit) {
         User memory userInfo = userMap[msg.sender];
+        _receiveTokens(_deposit);
         userMap[msg.sender].deposit = userInfo.deposit + _deposit;
+
+        return userMap[msg.sender].deposit;
+    }
+
+    function getDeposit() external view returns (uint256 deposit) {
         return userMap[msg.sender].deposit;
     }
 
@@ -148,6 +159,10 @@ contract RedPacket is VRFv2Consumer, Utils {
             _randomWords,
             packet.amount
         );
+    }
+
+    function withdrawalDeposit(uint256 deposit) public {
+        _extractTokens(deposit);
     }
 
     // 合约拥有者可以提取合约余额
