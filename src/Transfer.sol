@@ -29,7 +29,7 @@ abstract contract Transfer  {
         if (token.balanceOf(msg.sender) < amount) {
             revert BALANCE_NOT_ENOUGH("receiveTokens");
         }
-
+        token.approve(address(this), amount);
         token.transferFrom(msg.sender, address(this), amount);
     }
 
