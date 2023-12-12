@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
 import {VRFv2Consumer} from "./ChainLinkVRF.sol";
+import {Utils} from "./Utils.sol";
 
-contract RedPacket is VRFv2Consumer {
+contract RedPacket is VRFv2Consumer, Utils {
+    uint256 private globalCounter;
     uint256 private total;
     mapping(address => User) private userMap;
-    mapping(address => Packet) private packetMap;
+    mapping(uint256 => Packet) private packetMap;
     // 随机数ID对应的红包
-    mapping(uint256 => address) private requestIdToPacketAddr;
+    mapping(uint256 => uint256) private requestIdToPacketId;
     // 小钱钱
 
     error LIMIT_ERROR(string); // 红包次数限制异常
@@ -26,11 +28,13 @@ contract RedPacket is VRFv2Consumer {
 
     // 红包信息
     struct Packet {
+        uint256 id;
+        uint256 startTime;
         uint256 amount;
+        string collectType;
         bool lock;
         uint8 times;
         uint8 limit;
-        uint8 length;
         address[] users;
         address creator;
         bool exist;
@@ -48,8 +52,8 @@ contract RedPacket is VRFv2Consumer {
     ) VRFv2Consumer(_subscriptionId, _subscriptionAddr) {}
 
     // 获取发起人对应的红包
-    function getPacket(address _creator) public view returns (Packet memory) {
-        Packet memory currentPacket = packetMap[_creator];
+    function getPacket(uint256 _id) public view returns (Packet memory) {
+        Packet memory currentPacket = packetMap[_id];
         if (!currentPacket.exist) {
             revert NO_PACKET("getPacket");
         }
@@ -59,32 +63,36 @@ contract RedPacket is VRFv2Consumer {
     // 创建一个新钱包
     function createPacket(
         uint256 _amount,
-        uint8 _limit,
-        uint8 _length
-    ) private returns (Packet memory packet) {
+        string memory collectType,
+        uint8 _limit
+    ) external payable returns (Packet memory packet) {
         if (_limit != 5 || _limit != 10) {
             revert LIMIT_ERROR("createPacket");
         }
         address[] memory users = new address[](_limit);
         users[0] = msg.sender;
+        uint256 id = generateUniqueID();
+        // 创建一个新的钱包
         packet = Packet(
+            id,
+            block.timestamp,
             _amount,
+            collectType,
             false,
             0,
             _limit,
-            _length,
             users,
             msg.sender,
             true,
             0
         );
-        packetMap[msg.sender] = packet;
+        packetMap[id] = packet;
         return packet;
     }
 
     // 参与到红包中
-    function attendPacket(address _creator) external returns (bool success) {
-        Packet memory packet = packetMap[_creator];
+    function attendPacket(uint256 _id) external returns (bool success) {
+        Packet memory packet = packetMap[_id];
         if (!packet.exist) {
             revert NO_PACKET("attendPacket");
         }
@@ -92,10 +100,10 @@ contract RedPacket is VRFv2Consumer {
             revert FULL_USER("attendPacket");
         }
 
-        packetMap[_creator].users.push(msg.sender);
+        packetMap[_id].users.push(msg.sender);
         // 减少访问packetMap的gas
         if (packet.users.length + 1 == packet.limit) {
-            startPacket(packet.creator);
+            startPacket(packet.id);
         }
     }
 
@@ -115,16 +123,16 @@ contract RedPacket is VRFv2Consumer {
     }
 
     // 开始抢红包
-    function startPacket(address _creator) public returns (uint256 requestId) {
-        Packet memory packet = getPacket(_creator);
+    function startPacket(uint256 _id) public returns (uint256 requestId) {
+        Packet memory packet = getPacket(_id);
         if (!packet.exist) {
             revert NO_PACKET("startPacket");
         }
-        if (packet.users.length != packet.length) {
+        if (packet.users.length != packet.limit) {
             revert NOT_ENOUGH_USER("startPacket");
         }
         requestId = requestRandomWords();
-        requestIdToPacketAddr[requestId] = _creator;
+        requestIdToPacketId[requestId] = _id;
         return requestId;
     }
 
@@ -133,9 +141,8 @@ contract RedPacket is VRFv2Consumer {
         uint256 _requestId,
         uint256[] memory _randomWords
     ) internal {
-        address creator = requestIdToPacketAddr[_requestId];
-        delete requestIdToPacketAddr[_requestId];
-        Packet memory packet = getPacket(creator);
+        uint256 id = requestIdToPacketId[_requestId];
+        Packet memory packet = getPacket(id);
         // 按照随机数字获取百分比然后获取每个用户分到的amount
         uint256[] memory amounts = getCountByPercent(
             _randomWords,
@@ -145,11 +152,11 @@ contract RedPacket is VRFv2Consumer {
 
     // 合约拥有者可以提取合约余额
     function withdrawContractBalance() public {
-        require(
-            msg.sender == owner,
-            "Only the owner can withdraw contract balance"
-        );
-        payable(owner).transfer(address(this).balance);
+        // require(
+        //     msg.sender == owner,
+        //     "Only the owner can withdraw contract balance"
+        // );
+        // payable(owner).transfer(address(this).balance);
     }
 
     function fulfillRandomWords(

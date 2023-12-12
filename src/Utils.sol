@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
 
-contract Utils {
+abstract contract Utils {
     // 设置percent的精确度，越大越精确
     uint64 private decimal = 10000;
 
     // 计算随机数的百分比
     function calculatePercentages(
-        uint256[] calldata _randomWords
+        uint256[] memory _randomWords
     ) public view returns (uint256[] memory) {
         uint256[] memory percentages = new uint256[](_randomWords.length);
         uint256 total = 0;
@@ -26,7 +26,7 @@ contract Utils {
     }
 
     function getCountByPercent(
-        uint256[] calldata _randomWords,
+        uint256[] memory _randomWords,
         uint256 _amount
     ) public view returns (uint256[] memory) {
         uint256[] memory percentages = calculatePercentages(_randomWords);
@@ -34,8 +34,14 @@ contract Utils {
         // 计算总和
         for (uint256 i = 0; i < percentages.length; i++) {
             uint256 percentage = percentages[i];
-            amounts[i] = _amount * percentage / decimal;
+            amounts[i] = (_amount * percentage) / decimal;
         }
         return amounts;
+    }
+
+    // 生成唯一id
+    function generateUniqueID() public view returns (uint256) {
+        return
+            uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
     }
 }

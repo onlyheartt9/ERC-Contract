@@ -4,13 +4,15 @@ pragma solidity ^0.8.13;
 import {Test, console2, console} from "forge-std/Test.sol";
 import "@chainlink/contracts/src/v0.8/mocks/VRFCoordinatorV2Mock.sol";
 import {Utils} from "../src/Utils.sol";
+// 继承下来测试用
+contract UtilsObj is Utils{}
 
 contract UtilsTest is Test {
-    Utils utils;
+    UtilsObj utils;
     uint256[] random;
 
     function setUp() public {
-        utils = new Utils();
+        utils = new UtilsObj();
     }
 
     function test_getCountByPercent() public {
