@@ -5,8 +5,8 @@ import {Test, console2, console} from "forge-std/Test.sol";
 import "@chainlink/contracts/src/v0.8/mocks/VRFCoordinatorV2Mock.sol";
 import {RedPacket} from "../src/RedPacket.sol";
 import "./mock/MockErc20.sol";
-
-// import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "../src/Struct.sol";
 
 contract RedPockTest is Test {
     RedPacket public redpacket;
@@ -26,6 +26,7 @@ contract RedPockTest is Test {
     ];
     uint64 transaction;
     uint256 public depositSingle = 1000000;
+    address sender;
 
     function setUp() public {
         uint96 fee = 100000000000000000;
@@ -36,49 +37,79 @@ contract RedPockTest is Test {
         emit log_uint(transaction);
         mock.fundSubscription(transaction, fundAmount);
         token = new MockErc20();
-        // token = IERC20(0x779877A7B0D9E8603169DdbD7836e478b4624789);
+        sender = msg.sender;
         redpacket = new RedPacket(transaction, address(mock), address(token));
         mock.addConsumer(transaction, address(redpacket));
+    }
 
-        // 给用户赋值
+    function init() public {
+        address to = address(redpacket);
+        //给用户赋值
         for (uint256 i = 0; i < users.length; i++) {
             address user = users[i];
+            vm.prank(address(this));
             token.transfer(user, depositSingle * 10);
-            vm.prank(from);
+
+            vm.prank(user);
+            token.approve(to, depositSingle * 10);
+
+            vm.prank(user);
             redpacket.addDeposit(depositSingle * 10);
         }
     }
 
     function test_createPacket() public {
+        init();
         address from = msg.sender;
         address user0 = users[0];
         vm.prank(user0);
-        uint256 packetId = redpacket.createPacket(depositSingle, "ROLL", 5);
+        uint256 packetId = redpacket.createPacket(depositSingle, "ROLL", 5, 5);
+
+        for (uint256 i = 1; i < 5; i++) {
+            address user = users[i];
+
+            vm.prank(user);
+            redpacket.attendPacket(packetId);
+        }
+
+        Packet memory packet = redpacket.getPacket(packetId);
+        mock.fulfillRandomWords(packet.requestId, address(redpacket));
+        // Packet end_packet = redpacket.getPacket(packetId);
+        packet = redpacket.getPacket(packetId);
+        uint256 count = redpacket.getBalance();
+        for (uint256 i = 0; i < 5; i++) {
+            address user = users[i];
+            vm.prank(user);
+            uint256 number = redpacket.getDeposit();
+            count += number;
+        }
+        assertEq(count, depositSingle * 10 * 5);
     }
 
     // 合约获取到押金了
-    // function testDeposit() public {
-    //     address from = msg.sender;
-    //     address to = address(redpacket);
-    //     uint256 deposit = 1000000;
-    //     token.transfer(from, 10000000);
-    //     vm.prank(from);
-    //     token.approve(to, 10000000);
-    //     vm.prank(from);
-    //     redpacket.addDeposit(deposit);
-    //     vm.prank(from);
-    //     uint256 return_deposit = redpacket.getDeposit();
-    //     assertEq(deposit, return_deposit);
-    // }
+    function testDeposit() public {
+        address from = msg.sender;
+        address to = address(redpacket);
+        uint256 deposit = 1000000;
+        vm.prank(address(this));
+        token.transfer(from, deposit * 10);
 
-    // function test_random() public {
-    //     uint256 requestId = redpacket.requestRandomWords();
-    //     emit log_uint(requestId);
-    //     mock.fulfillRandomWords(requestId, address(redpacket));
-    //     (bool fulfilled, uint256[] memory randomWords) = redpacket.getRequestStatus(
-    //         requestId
-    //     );
-    //     emit log_array(randomWords);
-    //     assertTrue(fulfilled);
-    // }
+        vm.prank(from);
+        token.approve(to, deposit * 10);
+        vm.startPrank(from);
+        redpacket.addDeposit(deposit);
+        uint256 return_deposit = redpacket.getDeposit();
+        vm.stopPrank();
+        assertEq(deposit, return_deposit);
+    }
+
+    function test_random() public {
+        uint256 requestId = redpacket.requestRandomWords();
+        emit log_uint(requestId);
+        mock.fulfillRandomWords(requestId, address(redpacket));
+        (bool fulfilled, uint256[] memory randomWords) = redpacket
+            .getRequestStatus(requestId);
+        emit log_array(randomWords);
+        assertTrue(fulfilled);
+    }
 }

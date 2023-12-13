@@ -40,8 +40,8 @@ abstract contract Utils {
     }
 
     // 生成唯一id
-    function generateUniqueID() public view returns (uint256) {
+    function generateUniqueID(address userAddress) public view returns (uint256) {
         return
-            uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
+            uint256(keccak256(abi.encodePacked(block.timestamp, userAddress)));
     }
 }
