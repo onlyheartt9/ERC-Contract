@@ -6,19 +6,19 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 abstract contract Transfer  {
     IERC20 public token; // 代币合约
-    address public _owner;
+    address public owner;
 
     error BALANCE_NOT_ENOUGH(string); // 余额不足
     error CONTRACT_BALANCE_NOT_ENOUGH(string); // 合约余额不足
     error NOT_OWNER(); // 合约余额不足
 
     constructor(address _tokenAddress) {
-        _owner = msg.sender;
+        owner = msg.sender;
         token = IERC20(_tokenAddress);
     }
 
     modifier _onlyOwner() {
-        if(msg.sender != _owner){
+        if(msg.sender != owner){
             revert NOT_OWNER();
         }
         _; // 继续执行被修饰的函数
@@ -51,6 +51,6 @@ abstract contract Transfer  {
         if (token.balanceOf(address(this)) >= amount) {
             revert CONTRACT_BALANCE_NOT_ENOUGH("receiveTokens");
         }
-        token.transfer(_owner, amount);
+        token.transfer(owner, amount);
     }
 }

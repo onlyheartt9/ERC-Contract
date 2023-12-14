@@ -67,12 +67,11 @@ deploy-anvil:
 	--broadcast --legacy --ffi -vvvv
 
 deploy-sepolia:
-	@forge script script/Deploy.s.sol:Deploy --chain-id $(CHAIN_ID) \
+	@forge script script/Deploy.s.sol:DeployScript  \
 	--rpc-url $(RPC_URL) \
 	--private-key $(PRIVATE_KEY) \
 	--etherscan-api-key $(ETHERSCAN_API_KEY) \
-	--verifier-url $(VERIFIER_URL) \
-	--broadcast --legacy --ffi --verify -vvvv
+	--broadcast --verify -vvvv
 
 deploy-sepolia-no-verify:
 	@forge script script/Deploy.s.sol:Deploy --chain-id $(CHAIN_ID) \

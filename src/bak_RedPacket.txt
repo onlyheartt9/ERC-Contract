@@ -1,34 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
-import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
-import "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
+import {VRFv2Consumer} from "./ChainLinkVRF.sol";
+import {Utils} from "./Utils.sol";
+import {Transfer} from "./Transfer.sol";
+import "./Struct.sol";
 
-contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
+contract RedPacket is VRFv2Consumer, Utils, Transfer {
+    uint256 public contractBalance;
     mapping(address => User) private userMap;
     mapping(uint256 => Packet) private packetMap;
     // 随机数ID对应的红包
     mapping(uint256 => uint256) private requestIdToPacketId;
-    mapping(uint256 => RequestStatus)
-        public s_requests; /* requestId --> requestStatus */
-    VRFCoordinatorV2Interface COORDINATOR;
     // 小钱钱
-    uint256 public contractBalance;
-    // 设置percent的精确度，越大越精确
-    uint64 private decimal = 10000;
-    IERC20 public token; // 代币合约
-    address public _owner;
-    // Your subscription ID.
-    uint64 s_subscriptionId;
-    // past requests Id.
-    uint256[] public requestIds;
-    uint256 public lastRequestId;
-    bytes32 keyHash;
-    uint32 callbackGasLimit = 1000000;
-
-    // The default is 3, but you can set this higher.
-    uint16 requestConfirmations = 3;
 
     error LIMIT_ERROR(string); // 红包人数限制异常
     error TIMES_ERROR(string); // 红包次数限制异常
@@ -43,67 +26,15 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
     event EndPacket(uint256 packetId); // 红包整体结束
     event ContinuePacket(uint256 packetId); // 单次红包结束
     event Log(uint256 msg); // debug日志
-    event RequestSent(uint256 requestId, uint32 numWords);
-    event RequestFulfilled(uint256 requestId, uint256[] randomWords);
-    error BALANCE_NOT_ENOUGH(string); // 余额不足
-    error CONTRACT_BALANCE_NOT_ENOUGH(string); // 合约余额不足
-    error NOT_OWNER(); // 合约余额不足
-
-    struct RequestStatus {
-        bool fulfilled; // whether the request has been successfully fulfilled
-        bool exists; // whether a requestId exists
-        uint256[] randomWords;
-    }
-    // 红包信息
-    struct Packet {
-        uint256 id; // id
-        uint256 startTime; // 发起红包时间
-        uint256 amount; // 单个红包金额
-        string collectType; // 红包类型
-        bool lock; // 红包锁
-        uint8 currentTimes; // 当前次数
-        uint8 times; // 当前次数
-        uint32 limit; // 限制人数
-        address[] users; // 当前参加的人数
-        address creator; // 发起人
-        address currentUser; // 当前需要发红包的人
-        bool exist; // 是否存在
-        uint256 requestId; // 随机数映射id，方便vrf回调
-    }
-
-    // 个人用户信息
-    struct User {
-        uint256 deposit;
-        bool lock;
-        bool active;
-        bool exist;
-        uint256 packetId; // 正在参加的红包ID
-    }
-
-    struct RandomArrayResult {
-        uint256[] array;
-        uint256 maxIndex;
-    }
 
     constructor(
         uint64 _subscriptionId,
         address _subscriptionAddr,
-        bytes32 _keyHash,
         address _tokenAddress
-    ) VRFConsumerBaseV2(_subscriptionAddr) ConfirmedOwner(msg.sender) {
-        _owner = msg.sender;
-        COORDINATOR = VRFCoordinatorV2Interface(_subscriptionAddr);
-        s_subscriptionId = _subscriptionId;
-        keyHash=_keyHash;
-        token = IERC20(_tokenAddress);
-    }
-
-    modifier _onlyOwner(){
-        if (msg.sender != _owner) {
-            revert NOT_OWNER();
-        }
-        _; // 继续执行被修饰的函数
-    }
+    )
+        VRFv2Consumer(_subscriptionId, _subscriptionAddr)
+        Transfer(_tokenAddress)
+    {}
 
     // 获取发起人对应的红包
     function getPacket(uint256 _id) public view returns (Packet memory) {
@@ -113,6 +44,7 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
         }
         return currentPacket;
     }
+
 
     // 创建一个新钱包
     function createPacket(
@@ -167,7 +99,7 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
         userMap[userAddress].deposit = user.deposit + _num;
     }
 
-    function getBalance() external view returns (uint256) {
+    function getBalance()external view returns(uint256){
         return contractBalance;
     }
 
@@ -268,7 +200,7 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
             packetMap[packetId].currentTimes = packet.currentTimes + 1;
             packetMap[packetId].currentUser = maxUser;
             // 测试需要把这个注释掉
-            // startPacket(packetId);
+            startPacket(packetId);
         }
 
         emit ContinuePacket(packetId);
@@ -282,18 +214,17 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
         }
     }
 
-    // function withdrawalDeposit(uint256 deposit) public {
-    //     _extractTokens(deposit);
-    // }
+    function withdrawalDeposit(uint256 deposit) public {
+        _extractTokens(deposit);
+    }
 
     // 合约拥有者可以提取合约余额
-    function withdrawContractBalance() public _onlyOwner() {
+    function withdrawContractBalance() public {
         // require(
-        //     msg.sender == _owner,
-        //     "Only the _owner can withdraw contract balance"
+        //     msg.sender == owner,
+        //     "Only the owner can withdraw contract balance"
         // );
-        // payable(_owner).transfer(address(this).balance);
-        token.transfer(_owner, contractBalance);
+        // payable(owner).transfer(address(this).balance);
     }
 
     function fulfillRandomWords(
@@ -305,116 +236,5 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
         emit RequestFulfilled(_requestId, _randomWords);
 
         continuePacket(_requestId, _randomWords);
-    }
-
-    // 计算随机数的百分比
-    function calculatePercentages(
-        uint256[] memory _randomWords
-    ) public view returns (uint256[] memory) {
-        uint256[] memory percentages = new uint256[](_randomWords.length);
-        uint256 total = 0;
-
-        // 计算总和
-        for (uint256 i = 0; i < _randomWords.length; i++) {
-            total += _randomWords[i] / decimal;
-        }
-
-        // 计算百分比
-        for (uint256 i = 0; i < _randomWords.length; i++) {
-            percentages[i] = (_randomWords[i]) / total;
-        }
-
-        return percentages;
-    }
-
-    function getCountByPercent(
-        uint256[] memory _randomWords,
-        uint256 _amount
-    ) public view returns (uint256[] memory) {
-        uint256[] memory percentages = calculatePercentages(_randomWords);
-        uint256[] memory amounts = new uint256[](percentages.length);
-        // 计算总和
-        for (uint256 i = 0; i < percentages.length; i++) {
-            uint256 percentage = percentages[i];
-            amounts[i] = (_amount * percentage) / decimal;
-        }
-        return amounts;
-    }
-
-    // 生成唯一id
-    function generateUniqueID(
-        address userAddress
-    ) public view returns (uint256) {
-        return
-            uint256(keccak256(abi.encodePacked(block.timestamp, userAddress)));
-    }
-
-    // 允许其他地址将 ERC-20 代币转移到合约
-    function _receiveTokens(uint256 amount) internal {
-        if (token.balanceOf(msg.sender) < amount) {
-            revert BALANCE_NOT_ENOUGH("receiveTokens");
-        }
-        token.transferFrom(msg.sender, address(this), amount);
-    }
-
-    function _extractTokens(uint256 amount) internal {
-        if (token.balanceOf(msg.sender) < amount) {
-            revert BALANCE_NOT_ENOUGH("_extractTokens");
-        }
-
-        token.transferFrom(msg.sender, address(this), amount);
-    }
-
-    // 获取合约中的代币余额
-    function getContractBalance() public view returns (uint256) {
-        return token.balanceOf(address(this));
-    }
-
-    // 合约拥有者可以提取代币
-    function withdrawTokens(uint256 amount) public _onlyOwner {
-        if (token.balanceOf(address(this)) >= amount) {
-            revert CONTRACT_BALANCE_NOT_ENOUGH("receiveTokens");
-        }
-        token.transfer(_owner, amount);
-    }
-
-    // Assumes the subscription is funded sufficiently.
-    function requestRandomWords(
-        uint32 numWords
-    ) public returns (uint256 requestId) {
-        // Will revert if subscription is not set and funded.
-        requestId = COORDINATOR.requestRandomWords(
-            keyHash,
-            s_subscriptionId,
-            requestConfirmations,
-            callbackGasLimit,
-            numWords
-        );
-        s_requests[requestId] = RequestStatus({
-            randomWords: new uint256[](0),
-            exists: true,
-            fulfilled: false
-        });
-        requestIds.push(requestId);
-        lastRequestId = requestId;
-        emit RequestSent(requestId, numWords);
-        return requestId;
-    }
-
-    function setRandomWords(
-        uint256 _requestId,
-        uint256[] memory _randomWords
-    ) internal {
-        require(s_requests[_requestId].exists, "request not found");
-        s_requests[_requestId].fulfilled = true;
-        s_requests[_requestId].randomWords = _randomWords;
-    }
-
-    function getRequestStatus(
-        uint256 _requestId
-    ) external view returns (bool fulfilled, uint256[] memory randomWords) {
-        require(s_requests[_requestId].exists, "request not found");
-        RequestStatus memory request = s_requests[_requestId];
-        return (request.fulfilled, request.randomWords);
     }
 }
