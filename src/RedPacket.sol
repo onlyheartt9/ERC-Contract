@@ -7,7 +7,8 @@ import "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
 
 contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
     mapping(address => User) private userMap;
-    mapping(uint256 => Packet) private packetMap;
+    mapping(uint256 => Packet) public packetMap;
+    uint256[] public allPacketIds;
     // 随机数ID对应的红包
     mapping(uint256 => uint256) private requestIdToPacketId;
     mapping(uint256 => RequestStatus)
@@ -20,10 +21,10 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
     IERC20 public token; // 代币合约
     address public _owner;
     // Your subscription ID.
-    uint64 s_subscriptionId;
+    uint64 public s_subscriptionId;
     // past requests Id.
-    uint256[] public requestIds;
-    uint256 public lastRequestId;
+    uint256[] private requestIds;
+    uint256 private lastRequestId;
     bytes32 keyHash;
     uint32 callbackGasLimit = 1000000;
 
@@ -38,6 +39,9 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
     error NOT_ENOUGH_USER(string); // 参加的用户不够
     error NO_USER(string); // 没有对应用户
     error ALREADY_ATTEND(string); // 已经参加红包
+    error BALANCE_NOT_ENOUGH(string); // 余额不足
+    error CONTRACT_BALANCE_NOT_ENOUGH(string); // 合约余额不足
+    error NOT_OWNER(); // 合约余额不足
 
     event StartPacket(uint256 packetId); // 人数凑齐，开始红包开始
     event EndPacket(uint256 packetId); // 红包整体结束
@@ -45,9 +49,8 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
     event Log(uint256 msg); // debug日志
     event RequestSent(uint256 requestId, uint32 numWords);
     event RequestFulfilled(uint256 requestId, uint256[] randomWords);
-    error BALANCE_NOT_ENOUGH(string); // 余额不足
-    error CONTRACT_BALANCE_NOT_ENOUGH(string); // 合约余额不足
-    error NOT_OWNER(); // 合约余额不足
+    event createPacketSuccess(uint256 packetId); // 创建红包成功
+    event attendPacketSuccess(uint256 packetId); // 参加红包成功
 
     struct RequestStatus {
         bool fulfilled; // whether the request has been successfully fulfilled
@@ -78,6 +81,7 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
         bool active;
         bool exist;
         uint256 packetId; // 正在参加的红包ID
+        uint256[] packetIds; // 参加过的红包ID
     }
 
     struct RandomArrayResult {
@@ -94,11 +98,11 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
         _owner = msg.sender;
         COORDINATOR = VRFCoordinatorV2Interface(_subscriptionAddr);
         s_subscriptionId = _subscriptionId;
-        keyHash=_keyHash;
+        keyHash = _keyHash;
         token = IERC20(_tokenAddress);
     }
 
-    modifier _onlyOwner(){
+    modifier _onlyOwner() {
         if (msg.sender != _owner) {
             revert NOT_OWNER();
         }
@@ -112,6 +116,38 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
             revert NO_PACKET("getPacket");
         }
         return currentPacket;
+    }
+
+    // 获取发起人对应的红包
+    function getUser() public view returns (User memory) {
+        User memory currentUser = userMap[msg.sender];
+        if (!currentUser.exist) {
+            revert NO_USER("getUser");
+        }
+        return currentUser;
+    }
+
+    // 获取发起人对应的红包
+    function getPackets(
+        uint256[] memory _ids
+    ) public view returns (Packet[] memory) {
+        Packet[] memory packets = new Packet[](_ids.length);
+        for (uint256 i = 0; i < _ids.length; i++) {
+            uint256 _id = _ids[i];
+            Packet memory currentPacket = packetMap[_id];
+            if (!currentPacket.exist) {
+                revert NO_PACKET("getPackets");
+            }
+            packets[i] = currentPacket;
+        }
+
+        return packets;
+    }
+
+    // 获取发起人对应的红包
+    function getAllPackets() public view returns (Packet[] memory) {
+        uint256[] memory _ids = allPacketIds;
+        return getPackets(_ids);
     }
 
     // 创建一个新钱包
@@ -150,7 +186,11 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
             true,
             0
         );
+        userMap[msg.sender].packetId = id;
+        userMap[msg.sender].packetIds.push(id);
+        allPacketIds.push(id);
         packetMap[id] = packet;
+        emit createPacketSuccess(id);
         return id;
     }
 
@@ -190,7 +230,9 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
 
         packetMap[_id].users.push(msg.sender);
         userMap[msg.sender].packetId = _id;
+        userMap[msg.sender].packetIds.push(_id);
         userMap[msg.sender].lock = true;
+        emit attendPacketSuccess(_id);
         // 减少访问packetMap的gas
         if (packet.users.length + 1 == packet.limit) {
             startPacket(packet.id);
@@ -214,7 +256,8 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
     // 初始化个人信息
     function initUser() internal {
         if (!userMap[msg.sender].exist) {
-            userMap[msg.sender] = User(0, false, true, true, 0);
+            uint256[] memory packetIds = new uint256[](0);
+            userMap[msg.sender] = User(0, false, true, true, 0, packetIds);
         }
     }
 
@@ -287,7 +330,7 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
     // }
 
     // 合约拥有者可以提取合约余额
-    function withdrawContractBalance() public _onlyOwner() {
+    function withdrawContractBalance() public _onlyOwner {
         // require(
         //     msg.sender == _owner,
         //     "Only the _owner can withdraw contract balance"
@@ -330,7 +373,7 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
     function getCountByPercent(
         uint256[] memory _randomWords,
         uint256 _amount
-    ) public view returns (uint256[] memory) {
+    ) private returns (uint256[] memory) {
         uint256[] memory percentages = calculatePercentages(_randomWords);
         uint256[] memory amounts = new uint256[](percentages.length);
         // 计算总和
@@ -370,12 +413,12 @@ contract RedPacket is VRFConsumerBaseV2, ConfirmedOwner {
         return token.balanceOf(address(this));
     }
 
-    // 合约拥有者可以提取代币
-    function withdrawTokens(uint256 amount) public _onlyOwner {
-        if (token.balanceOf(address(this)) >= amount) {
-            revert CONTRACT_BALANCE_NOT_ENOUGH("receiveTokens");
+    // 用户提取提取代币
+    function withdrawTokens(uint256 amount) public {
+        if (getDeposit() >= amount) {
+            revert BALANCE_NOT_ENOUGH("withdrawTokens");
         }
-        token.transfer(_owner, amount);
+        token.transfer(msg.sender, amount);
     }
 
     // Assumes the subscription is funded sufficiently.

@@ -8,7 +8,7 @@ struct Packet {
     string collectType; // 红包类型
     bool lock; // 红包锁
     uint8 currentTimes; // 当前次数
-    uint8 times; // 当前次数
+    uint8 times; // 次数限制
     uint32 limit; // 限制人数
     address[] users; // 当前参加的人数
     address creator; // 发起人
