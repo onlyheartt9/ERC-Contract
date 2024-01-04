@@ -40,9 +40,6 @@ contract RedPockTest is Test {
         sender = msg.sender;
         bytes32 keyHash = 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c;
         redpacket = new RedPacket(
-            transaction,
-            address(mock),
-            keyHash,
             address(token)
         );
         mock.addConsumer(transaction, address(redpacket));

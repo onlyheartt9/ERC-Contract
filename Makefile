@@ -71,7 +71,16 @@ deploy-sepolia:
 	--rpc-url $(RPC_URL) \
 	--private-key $(PRIVATE_KEY) \
 	--etherscan-api-key $(ETHERSCAN_API_KEY) \
-	--broadcast --verify -vvvv
+	--broadcast \
+	--verify \
+	-vvvv
+
+deploy-sepolia-vrf:
+	@forge script script/Vrf.s.sol:DeployScript  \
+	--rpc-url $(RPC_URL) \
+	--private-key $(PRIVATE_KEY) \
+	--etherscan-api-key $(ETHERSCAN_API_KEY) \
+	--broadcast --verify -vvvv	
 
 deploy-sepolia-no-verify:
 	@forge script script/Deploy.s.sol:Deploy --chain-id $(CHAIN_ID) \
